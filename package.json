@@ -2,6 +2,12 @@
   "dependencies": {
     "@minecraft/server": "^1.11.0-beta.1.20.80-stable",
     "@minecraft/server-ui": "^1.2.0-beta.1.20.80-stable",
-    "bedrock-protocol": "^3.36.0"
+    "bedrock-protocol": "^3.36.0",
+    "path": "^0.12.7",
+    "ts-require": "^1.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
   }
 }
