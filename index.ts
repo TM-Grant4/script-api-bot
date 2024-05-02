@@ -110,13 +110,13 @@ class ScriptClient extends Client {
     private isInitialized: boolean = false;
     private variables: string[] = [];
     private functions: string[] = [];
-    private client: Client;
+    private client: any;
     private currentPlayerListPacket: number = 0;
 
     constructor(client: Client) {
         //@ts-ignore
         super(client);
-        this.client = client;
+        this.client = new ScriptClient(client);
         setInterval(() => {
             if (client.status === ClientStatus.Initialized) {
                 this.initialize();
@@ -186,7 +186,7 @@ class ScriptClient extends Client {
         this.functions.push(functionString);
         return this;
     }
-    public sendMessage(message) {
+    public sendMessage(message: string) {
         this.client.write('text', {
             type: 'chat',
             needs_translation: false,
@@ -213,17 +213,17 @@ class ScriptClient extends Client {
             property: property
         };
         this.sendMessage(`getDynamicProperty ${JSON.stringify(jsonData)}`);
-        this.on(`text`, (packet) => {
+        this.client.on(`text`, (packet: { type: string, message: string } ) => {
 
         })
     }
 
     public getPlayers() {
         this.sendMessage(`getAllPlayers`);
-        this.on(`text`, (packet) => {
-            if (packet.type === `json`) {
-                if (packet.message.startsWith(`json `).replace(`json `, ``)) {
-
+        this.client.on(`text`, (packet: { type: string, message: string }) => {
+            if (packet.type === `json_whisper`) {
+                if (packet.message.startsWith(`json `)) {
+                    packet.message.replace(`json `, ``)
                     const jsonData = JSON.parse(packet.message.replace(`{"rawtext":[{"text":"`, ``).replace(`"}]}`, ``));
                     if (jsonData.type === `allPlayers`) {
                         return jsonData.players;
@@ -238,11 +238,11 @@ class ScriptClient extends Client {
      */
     private initialize() {
         this.isInitialized = true;
-        client.on(`player_list`, (packet) => {
+        this.client.on(`player_list`, (packet: { records: { type: string, records: { username: string, build_platform: number }[] }}) => {
             if (packet.records.type === `add`) {
                 if (this.currentPlayerListPacket === 0) {
-                    packet.records.records.forEach((record) => {
-                        const devices = {
+                    packet.records.records.forEach((record: { username: string, build_platform: number }) => {
+                        const devices: { [key: string]: string } = {
                             "0": "Undefined",
                             "1": "Android",
                             "2": "iPhone",
@@ -260,12 +260,12 @@ class ScriptClient extends Client {
                             "14": "WindowsPhone",
                             "15": "Linux"
                         };
-                        const device = devices[record.build_platform];
+                        const device: string = devices[record.build_platform.toString() as keyof typeof devices];
                         this.setDynamicProperty(`${record.username}`, `device`, device);
                     });
                 }
             }
-        })
+        });
         console.log("Client initialized.");
     }
 }
@@ -277,7 +277,7 @@ class ActionFormData {
     private buttons: { text: string; iconPath?: string }[] = [];
 
     constructor(client: Client) {
-        this.client = client
+        this.client = new ScriptClient(client)
         return this;
     }
 
@@ -338,7 +338,7 @@ class ModalFormData {
     private extras: { text?: string, minValue?: number, maxValue?: number, defaultValue?: boolean | string | number, placeHolderValue?: string, values?: [] }[] = [];
 
     constructor(client: Client) {
-        this.client = client;
+        this.client = new ScriptClient(client);
         return this;
     }
 
@@ -401,7 +401,7 @@ class MessageFormData {
     private buttons: { text: string }[] = [{ text: `` }, { text: `` }];
 
     constructor(client: Client) {
-        this.client = client;
+        this.client = new ScriptClient(client);
         return this;
     }
 
@@ -459,7 +459,7 @@ class MessageFormData {
 }
 
 export { ScriptClient, ActionFormData, ModalFormData, MessageFormData };
-
+/**
 import * as bedrock from "bedrock-protocol";
 const client = bedrock.createClient({
     host: ``,
@@ -470,3 +470,4 @@ const client = bedrock.createClient({
 const clientt = new ScriptClient(client);
 
 clientt.onEvent(`afterBlockExplode`, ((d) => { }))
+*/
