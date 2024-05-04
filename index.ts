@@ -1,5 +1,6 @@
 import { WorldAfterEvents, WorldBeforeEvents } from "@minecraft/server";
-import { Client, createClient, ClientStatus } from "bedrock-protocol";
+import { Client, ClientStatus } from "bedrock-protocol";
+import { Player } from "./classes/Player"
 
 interface ActionFormResponse {
 	selection: number;
@@ -64,19 +65,27 @@ class ScriptClient extends Client {
 	private isInitialized: boolean = false;
 	private variables: string[] = [];
 	private functions: string[] = [];
-	private client: any;
+	private client: any | ScriptClient;
 	private currentPlayerListPacket: number = 0;
 
-	constructor(client: Client) {
+	public self: Player | undefined = undefined;
+
+	/**
+	 * @param client 
+	 * @param username Allows for the use of ScriptClient.self
+	 */
+	constructor(client: Client, username: string = ``) {
 		//@ts-ignore
 		super(client);
 		this.client = new ScriptClient(client);
-		setInterval(() => {
-			if (client.status === ClientStatus.Initialized) {
+		(async () => {
+			this.self = (await this.findPlayer(username));
+			setInterval(() => {
+				if (client.status === ClientStatus.Initialized) return;
 				this.initialize();
 				return this;
-			}
-		}, 500);
+			}, 500);
+		})()
 	}
 	/**
 	 * Registers a callback for a specific event if the client is initialized.
@@ -145,16 +154,39 @@ class ScriptClient extends Client {
 		})
 		return this;
 	}
-	public setDynamicProperty(name: string, property: string, value: string | number | string[] | number[]) {
+	/**
+	 * Usable with xuid for a players name replacement
+	 * @example
+	 * ```
+	 * /kick 2538374643937 kicked by bot
+	 * ```
+	 */
+	public sendCommand(command: string) {
+		this.client.write("command_request", {
+			command: command,
+			internal: false,
+			version: 72,
+			origin: {
+				type: 5,
+				uuid: "",
+				request_id: ""
+			},
+		});
+	}
+
+	/**
+	 * Sets the dynamic property of the world 
+	 */
+	public setDynamicProperty(property: string, value: string | number | string[] | number[]) {
 		const jsonData = {
-			type: `player`,
-			name: name,
+			type: `world`,
 			property: property,
 			value: value
 		}
 		this.sendMessage(`setDynamicProperty ${JSON.stringify(jsonData)}`);
 		return this;
 	}
+
 	public getDynamicProperty(name: string, property: string) {
 		const jsonData = {
 			name: name,
@@ -162,23 +194,59 @@ class ScriptClient extends Client {
 		};
 		this.sendMessage(`getDynamicProperty ${JSON.stringify(jsonData)}`);
 		this.client.on(`text`, (packet: { type: string, message: string }) => {
-
-		})
-	}
-
-	public getPlayers() {
-		this.sendMessage(`getAllPlayers`);
-		this.client.on(`text`, (packet: { type: string, message: string }) => {
 			if (packet.type === `json_whisper`) {
 				if (packet.message.startsWith(`json `)) {
-					packet.message.replace(`json `, ``)
-					const jsonData = JSON.parse(packet.message.replace(`{"rawtext":[{"text":"`, ``).replace(`"}]}`, ``));
-					if (jsonData.type === `allPlayers`) {
-						return jsonData.players;
-					}
+					packet.message.replace(`json `, ``);
+					const jsonData = JSON.parse(packet.message);
+					if (jsonData.type === `worldDynamicProperty`) return jsonData.value;
 				}
 			}
 		})
+	}
+
+	public async getPlayers(): Promise<Player[]> {
+		this.sendMessage('getAllPlayers');
+		return new Promise((resolve, reject) => {
+			const players: Player[] = [];
+			
+			this.client.on('text', (packet: { type: string, message: string }) => {
+				if (packet.type === 'json_whisper') {
+					if (packet.message.startsWith('json ')) {
+						const jsonData: { type: string, players: string[] } = JSON.parse(packet.message.replace('json ', '').replace('{"rawtext":[{"text":"', '').replace('"}]}', ''));
+						if (jsonData.type === 'allPlayers') {
+							Promise.all(jsonData.players.map((p: string) => this.findPlayer(p)))
+								.then((foundPlayers: Player[]) => {
+									foundPlayers.forEach((player: Player | undefined) => {
+										if (player) {
+											players.push(player);
+										}
+									});
+									resolve(players);
+								})
+								.catch((error) => reject(error));
+						}
+					}
+				}
+			});
+		});
+	}	
+
+	//@ts-ignore
+	public async findPlayer(name: string): Promise<Player> {
+		return new Promise((resolve) => {
+			this.client.on('text', async (packet: { type: string, message: string }) => {
+				if (packet.type === 'json_whisper') {
+					if (packet.message.startsWith('json ')) {
+						const jsonData: { type: string, players: string[] } = JSON.parse(packet.message.replace('json ', '').replace('{"rawtext":[{"text":"', '').replace('"}]}', ''));
+						if (jsonData.type === 'allPlayers') {
+							const players: Player[] = (await this.getPlayers());
+							const player: Player | undefined = players.find((p: Player) => p.name === name);
+							if (player) resolve(player);
+						}
+					}
+				}
+			});
+		});
 	}
 
 	/**
@@ -209,7 +277,7 @@ class ScriptClient extends Client {
 							"15": "Linux"
 						};
 						const device: string = devices[record.build_platform.toString() as keyof typeof devices];
-						this.setDynamicProperty(`${record.username}`, `device`, device);
+						this.setDynamicProperty(`device`, device);
 					});
 				}
 			}
@@ -388,25 +456,25 @@ class MessageFormData {
 export { ScriptClient, ActionFormData, ModalFormData, MessageFormData };
 /**
 const client = require(`bedrock-protocol`).createClient({
-    host: ip,
-    port: port,
-    username: ``,
-    profilesFolder: `./authCache`
+	host: ip,
+	port: port,
+	username: ``,
+	profilesFolder: `./authCache`
 });
 const scripts = require(`script-api-bot`);
 
 const scriptClient = new scripts.ScriptClient(client);
 
 function function1() {
-    console.log(`d`)
+	console.log(`d`)
 }
 
 scriptClient.setVar(`const`, `test`, `test`);
 scriptClient.createFunction(function1)
 
 scriptClient.onEvent(`beforeChatSend`, ((data) => {
-    if (data.message === ``) {
-        
-    }
+	if (data.message === ``) {
+	    
+	}
 }))
 */
