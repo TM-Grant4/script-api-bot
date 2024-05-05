@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "strict": false,
+        "outDir": "out",
+        "declarationDir": "out",
+        "declaration": true,
+        "allowSyntheticDefaultImports": true
+    },
+    "exclude": [
+        "out"
+    ]
+}
