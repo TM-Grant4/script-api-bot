@@ -3,17 +3,17 @@ import { Client, ClientStatus, createClient } from "bedrock-protocol";
 import type { ScriptClientOptions } from "./Types/Client.js";
 import { Link } from "./Classes/Link.js";
 
-type AfterEvents = {
-	//@ts-ignore
-	[K in `after${Capitalize<keyof WorldAfterEvents>}`]: K extends `after${infer P}` ? Parameters<Parameters<WorldAfterEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
-}
+// type AfterEvents = {
+// 	//@ts-ignore
+// 	[K in `after${Capitalize<keyof WorldAfterEvents>}`]: K extends `after${infer P}` ? Parameters<Parameters<WorldAfterEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
+// }
 
-type BeforeEvents = {
-	//@ts-ignore
-	[K in `before${Capitalize<keyof WorldBeforeEvents>}`]: K extends `before${infer P}` ? Parameters<Parameters<WorldBeforeEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
-}
+// type BeforeEvents = {
+// 	//@ts-ignore
+// 	[K in `before${Capitalize<keyof WorldBeforeEvents>}`]: K extends `before${infer P}` ? Parameters<Parameters<WorldBeforeEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
+// }
 
-type Events = AfterEvents & BeforeEvents
+// type Events = AfterEvents & BeforeEvents
 
 class ScriptClient {
 
@@ -40,11 +40,15 @@ class ScriptClient {
 		})
 
 		this.link = new Link(this)
-
-		this.onClientJoin().then(() => {
-			this.sendCommand(`scriptevent blqzed:script_bot_init ${this.link}`)
-			this.link.send(`eval`, `console.warn('no bitches?')`)
-		})
+		const callback = ({ status }) => {
+			if (status === "player_spawn") {
+				this.client.off("play_status", callback)
+				//@ts-ignore
+				this.sendCommand(`scriptevent blqzed:script_bot_init ${this.link.key}`)
+				this.isInitialized = true
+			}
+		}
+		this.client.on("play_status", callback)
 
 		process.on("SIGINT", () => {
 			client.leave()
@@ -56,10 +60,10 @@ class ScriptClient {
 		return this.client
 	}
 
-	public onEvent<E extends keyof Events>(event: E, callback: (data: Events[E]) => void) {
-		if (!this.events.hasOwnProperty(event)) this.sendMessage(`event ${event}`);
-		(this.events[event] ??= []).push(callback)
-	}
+	// public onEvent<E extends keyof Events>(event: E, callback: (data: Events[E]) => void) {
+	// 	if (!this.events.hasOwnProperty(event)) this.sendMessage(`event ${event}`);
+	// 	(this.events[event] ??= []).push(callback)
+	// }
 
 	public sendMessage(message: string) {
 		this.client.write('text', {
@@ -89,20 +93,9 @@ class ScriptClient {
 	/**
 	 * Marks the client as initialized.
 	 */
-	public async onClientJoin() {
-		return new Promise<void>(resolve => {
-			const callback = ({ status }) => {
-				if (status === "player_spawn") {
-					resolve()
-					this.client.off("play_status", callback)
-				}
-			}
-			this.client.on("play_status", callback)
-		})
-	}
-
-	public async onLinked() {
-		return this.link.onLinked()
+	public async onClientJoin(): Promise<void> {
+		if (this.isInitialized) return Promise.resolve()
+		return new Promise((resolve) => setTimeout(() => this.onClientJoin().then(resolve), 1000))
 	}
 
 	public leave() {
@@ -140,8 +133,7 @@ const client = new ScriptClient({
 	port: 19132
 })
 
-process.stdin.on("data", (buffer) => {
+process.stdin.on("data", async (buffer) => {
 	const str = buffer.toString()
-	console.log(str.trim())
-	console.log(client.link.send("eval", str.trim()))
+	console.log(await client.link.sendAsync("eval", str.trim()).catch(message => message))
 })

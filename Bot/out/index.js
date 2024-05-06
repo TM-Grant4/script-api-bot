@@ -1,5 +1,14 @@
 import { createClient } from "bedrock-protocol";
 import { Link } from "./Classes/Link.js";
+// type AfterEvents = {
+// 	//@ts-ignore
+// 	[K in `after${Capitalize<keyof WorldAfterEvents>}`]: K extends `after${infer P}` ? Parameters<Parameters<WorldAfterEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
+// }
+// type BeforeEvents = {
+// 	//@ts-ignore
+// 	[K in `before${Capitalize<keyof WorldBeforeEvents>}`]: K extends `before${infer P}` ? Parameters<Parameters<WorldBeforeEvents[Uncapitalize<P>]["subscribe"]>[0]>[0] : never
+// }
+// type Events = AfterEvents & BeforeEvents
 class ScriptClient {
     isInitialized = false;
     events = {};
@@ -22,10 +31,15 @@ class ScriptClient {
             port: options.port
         });
         this.link = new Link(this);
-        this.onClientJoin().then(() => {
-            this.sendCommand(`scriptevent blqzed:script_bot_init ${this.link}`);
-            this.link.send(`eval`, `console.warn('no bitches?')`);
-        });
+        const callback = ({ status }) => {
+            if (status === "player_spawn") {
+                this.client.off("play_status", callback);
+                //@ts-ignore
+                this.sendCommand(`scriptevent blqzed:script_bot_init ${this.link.key}`);
+                this.isInitialized = true;
+            }
+        };
+        this.client.on("play_status", callback);
         process.on("SIGINT", () => {
             client.leave();
             setTimeout(() => process.exit(1), 100);
@@ -34,11 +48,10 @@ class ScriptClient {
     getClient() {
         return this.client;
     }
-    onEvent(event, callback) {
-        if (!this.events.hasOwnProperty(event))
-            this.sendMessage(`event ${event}`);
-        (this.events[event] ??= []).push(callback);
-    }
+    // public onEvent<E extends keyof Events>(event: E, callback: (data: Events[E]) => void) {
+    // 	if (!this.events.hasOwnProperty(event)) this.sendMessage(`event ${event}`);
+    // 	(this.events[event] ??= []).push(callback)
+    // }
     sendMessage(message) {
         this.client.write('text', {
             type: 'chat',
@@ -66,18 +79,9 @@ class ScriptClient {
      * Marks the client as initialized.
      */
     async onClientJoin() {
-        return new Promise(resolve => {
-            const callback = ({ status }) => {
-                if (status === "player_spawn") {
-                    resolve();
-                    this.client.off("play_status", callback);
-                }
-            };
-            this.client.on("play_status", callback);
-        });
-    }
-    async onLinked() {
-        return this.link.onLinked();
+        if (this.isInitialized)
+            return Promise.resolve();
+        return new Promise((resolve) => setTimeout(() => this.onClientJoin().then(resolve), 1000));
     }
     leave() {
         this.client.disconnect();
@@ -109,8 +113,10 @@ const client = new ScriptClient({
     host: "127.0.0.1",
     port: 19132
 });
-process.stdin.on("data", (buffer) => {
+process.stdin.on("data", async (buffer) => {
     const str = buffer.toString();
-    console.log(str.trim());
-    console.log(client.link.send("eval", str.trim()));
+    console.log(await client.link.sendAsync("eval", str.trim()).catch(message => message));
+});
+client.getClient().on("set_health", (player) => {
+    console.log(player);
 });
